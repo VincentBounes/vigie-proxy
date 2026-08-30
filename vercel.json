@@ -2,6 +2,9 @@
   "functions": {
     "api/helicopters.js": {
       "maxDuration": 10
+    },
+    "api/overpass.js": {
+      "maxDuration": 30
     }
   }
 }
