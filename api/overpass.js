@@ -1,6 +1,21 @@
 // VIGIE — Proxy Overpass Vercel
 // Route : POST /api/overpass
-// Body : { query: "..." }
+// Body : form-encoded "data=<query>" OU JSON { query: "..." }
+
+export const config = {
+  api: {
+    bodyParser: false, // Lire le body brut pour gérer form-encoded
+  },
+}
+
+async function getRawBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = ''
+    req.on('data', chunk => { data += chunk })
+    req.on('end', () => resolve(data))
+    req.on('error', reject)
+  })
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -8,7 +23,6 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') { res.status(204).end(); return }
 
-  // Cache court — données OSM changent peu
   res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=30')
 
   const MIRRORS = [
@@ -19,12 +33,20 @@ export default async function handler(req, res) {
   ]
 
   let query = ''
+
   if (req.method === 'POST') {
-    // Body peut être { query } ou data=... (form-encoded)
-    if (req.body?.query) {
-      query = req.body.query
-    } else if (typeof req.body === 'string') {
-      query = req.body.replace(/^data=/, '')
+    const raw = await getRawBody(req)
+    // Form-encoded : data=<query>
+    if (raw.startsWith('data=')) {
+      query = decodeURIComponent(raw.slice(5).replace(/\+/g, ' '))
+    } else {
+      // Tenter JSON
+      try {
+        const parsed = JSON.parse(raw)
+        query = parsed.query || parsed.data || ''
+      } catch(e) {
+        query = raw
+      }
     }
   } else if (req.method === 'GET') {
     query = req.query.data || req.query.query || ''
