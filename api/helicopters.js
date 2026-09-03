@@ -3,12 +3,10 @@
 // Déployer sur Vercel — gratuit, zéro config
 
 export default async function handler(req, res) {
-  // CORS — autorise vigie-4ze.pages.dev et tout autre origine
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
   if (req.method === 'OPTIONS') { res.status(204).end(); return }
 
-  // Cache : Vercel garde 15s, navigateur 10s — adsb.lol ne verra qu'une requête/15s
   res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=10')
 
   const lat  = req.query.lat  || '43.6047'
@@ -32,13 +30,27 @@ export default async function handler(req, res) {
     const data = await response.json()
     const all = data.ac || []
 
-    // Filtre hélicoptères côté serveur
+    // Filtre élargi — le registre VIGIE fait le tri fin côté client
+    // On retient tout ce qui pourrait être un hélico :
+    // catégorie A7 (ADSB officiel hélicoptère)
+    // type commençant par H, EC, AS, AW, BO, BK, MD, R4, R6, S6, S7, S9
+    // callsign SAMU/SMUR/DRAGON/CHOUCAS/GEND/POLIC/RESCUE/LIFEG
+    // immat française F-H (hélico civil français — range ICAO 3C4000-3C7FFF)
+    // ou pas de type du tout mais altitude basse (probablement hélico non taggé)
+    const HELI_TYPES = ['H','EC','AS','AW','BO','BK','MD','R4','R6','S6','S7','S9','SK','CH','NH','MI']
+    const HELI_CS    = ['SAMU','SMUR','DRAGON','CHOUCAS','GEND','POLIC','RESCUE','LIFEG','HELIAIR']
+
     const helicos = all.filter(a => {
       if (a.category === 'A7') return true
-      const t = (a.t || '').toUpperCase()
-      if (t.startsWith('H') || t.startsWith('EC') || t.startsWith('AS3') || t.startsWith('AW')) return true
-      const cs = (a.flight || '').trim().toUpperCase()
-      if (['SAMU','SMUR','DRAGON','CHOUCAS','GEND','POLIC','RESCUE'].some(p => cs.startsWith(p))) return true
+      const t  = (a.t      || '').toUpperCase().trim()
+      const cs = (a.flight || '').toUpperCase().trim()
+      const r  = (a.r      || '').toUpperCase().trim()
+      if (t && HELI_TYPES.some(p => t.startsWith(p))) return true
+      if (cs && HELI_CS.some(p => cs.startsWith(p))) return true
+      // Immat française hélico civil : F-H... → hex 3c4xxx à 3c7xxx
+      if (r.startsWith('F-H')) return true
+      const hex = (a.hex || '').toLowerCase()
+      if (hex >= '3c4000' && hex <= '3c7fff') return true
       return false
     })
 
